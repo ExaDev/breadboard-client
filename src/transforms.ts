@@ -9,10 +9,13 @@ export function serverStreamEventDecoder(): TransformStream<string, string> {
 			// Ensure chunk is a string
 			const chunkStr = typeof chunk === "string" ? chunk : String(chunk);
 
+			// Skip empty chunks
+			if (!chunkStr.trim()) return;
+
+			// Remove data: prefix if present
 			if (chunkStr.startsWith("data: ")) {
 				controller.enqueue(chunkStr.slice(6));
-			} else if (chunkStr.trim() !== "") {
-				console.warn("Received SSE chunk without data prefix:", chunkStr);
+			} else {
 				controller.enqueue(chunkStr);
 			}
 		},
@@ -47,9 +50,7 @@ export function chunkRepairTransform(): TransformStream<string, string> {
 
 				if (isBroken) {
 					if (brokenChunk !== null) {
-						const completeChunks = (brokenChunk + chunk).split("\n\n");
-						brokenChunk = completeChunks.pop() ?? null;
-						completeChunks.forEach(enqueue);
+						brokenChunk += chunk;
 					} else {
 						brokenChunk = chunk;
 					}
@@ -73,62 +74,43 @@ export function chunkRepairTransform(): TransformStream<string, string> {
 export function runEventDecoder(): TransformStream<string, RunEvent> {
 	return new TransformStream<string, RunEvent>({
 		transform(chunk, controller) {
-			// Don't process empty chunks
+			// Skip empty chunks
 			if (!chunk || !chunk.trim()) {
 				return;
 			}
 
-			// Parse the chunk as JSON and handle errors
-			let parsed;
 			try {
-				parsed = JSON.parse(chunk);
+				// Parse chunk as JSON
+				const parsed = JSON.parse(chunk);
+
+				// Basic validation of the event structure
+				if (!Array.isArray(parsed) || parsed.length < 2) {
+					controller.enqueue([
+						"error",
+						"Invalid event format: expected array with at least 2 elements",
+					]);
+					return;
+				}
+
+				const eventType = parsed[0];
+
+				// Validate event type
+				if (!["input", "output", "error"].includes(eventType)) {
+					controller.enqueue(["error", `Invalid event type: ${eventType}`]);
+					return;
+				}
+
+				// Pass through the valid event
+				controller.enqueue(parsed as RunEvent);
 			} catch (error) {
+				// Handle parsing errors
 				controller.enqueue([
 					"error",
 					`Failed to parse event: ${
 						error instanceof Error ? error.message : String(error)
 					}`,
 				]);
-				return;
 			}
-
-			// Check that it's a valid RunEvent array with correct structure
-			if (!Array.isArray(parsed) || parsed.length < 2) {
-				controller.enqueue([
-					"error",
-					"Invalid event format: expected array with at least 2 elements",
-				]);
-				return;
-			}
-
-			const [eventType, eventData] = parsed;
-
-			// Validate event type
-			if (!["input", "output", "error"].includes(eventType)) {
-				controller.enqueue(["error", `Invalid event type: ${eventType}`]);
-				return;
-			}
-
-			// Validate event data structure based on type
-			if (eventType === "input") {
-				if (!eventData?.node?.id || !eventData?.inputArguments?.schema) {
-					controller.enqueue([
-						"error",
-						"Invalid input event: missing required fields",
-					]);
-					return;
-				}
-			} else if (eventType === "output") {
-				if (!eventData?.node?.id || !("outputs" in eventData)) {
-					controller.enqueue([
-						"error",
-						"Invalid output event: missing required fields",
-					]);
-					return;
-				}
-			}
-
-			controller.enqueue(parsed as RunEvent);
 		},
 	});
 }
