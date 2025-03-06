@@ -20,7 +20,7 @@ const config: JestConfigWithTsJest = {
 	verbose: true,
 	maxWorkers: 1,
 	collectCoverage: true,
-	coverageReporters: ["json", "html"],
+	coverageReporters: ["text", "lcov", "json", "html"],
 };
 
 export default config;
