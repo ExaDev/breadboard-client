@@ -1,0 +1,54 @@
+# GitHub CI Workflow
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "yarn"
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Setup environment
+        run: |
+          echo "NODE_ENV=test" >> $GITHUB_ENV
+          # Add any other environment variables here
+
+      - name: Run tests with coverage
+        run: yarn test:coverage:ci
+
+      - name: Build
+        run: yarn build
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v5
+        with:
+          directory: ./coverage/
+          fail_ci_if_error: false
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
