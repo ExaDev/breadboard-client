@@ -36,6 +36,11 @@ jobs:
 
       - name: Run tests with coverage
         run: yarn test:coverage:ci
+        env:
+          BREADBOARD_SERVER_URL: ${{ secrets.BREADBOARD_SERVER_URL }}
+          BREADBOARD_USER: ${{ secrets.BREADBOARD_USER }}
+          BOARD_ID: ${{ secrets.BOARD_ID }}
+          BREADBOARD_API_KEY: ${{ secrets.BREADBOARD_API_KEY }}
 
       - name: Build
         run: yarn build
