@@ -43,7 +43,6 @@
 	"type": "module",
 	"types": "dist/index.d.ts",
 	"publishConfig": {
-		"registry": "https://npm.pkg.github.com",
 		"access": "public"
 	},
 	"version": "1.0.0"
