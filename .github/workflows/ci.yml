@@ -95,14 +95,28 @@ jobs:
       - name: Build
         run: yarn build
 
+      # Reports whether semantic-release actually released, which gates the npmjs.com publish below. semantic-release exposes no step output of its own, so the signal is package.json's version: @semantic-release/npm's prepare step writes the next version into it on a release and leaves it untouched when the commits since the last tag warrant none. Publishing to GitHub Packages is already conditional in the same way, because semantic-release only reaches its publish phase when it has a release to make.
       - name: Release
+        id: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx semantic-release
+        run: |
+          before=$(node -p "require('./package.json').version")
+          npx semantic-release
+          after=$(node -p "require('./package.json').version")
+          if [ "$before" = "$after" ]; then
+            echo "semantic-release made no release; version is still $after"
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "semantic-release released $after (was $before)"
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$after" >> "$GITHUB_OUTPUT"
 
       # Publish to npmjs.com via trusted publishing, which exchanges the job's OIDC identity for a short-lived registry token instead of a long-lived NPM_TOKEN. registry-url and scope are still set, unlike in this org's single-registry repos that omit them: the GitHub Packages step above already mapped @exadev to npm.pkg.github.com in the same .npmrc, so without remapping it here `npm publish` would push to GitHub Packages a second time rather than to npmjs.com. The _authToken line setup-node writes alongside it is harmless, because npm runs the OIDC exchange before it reads any credential and writes the exchanged token over that same user-level config key. Node 22 rather than 20: trusted publishing requires npm 11.5.1 or later on Node 22.14.0 or higher, and Node 22 still ships npm 10.x, so the CLI is upgraded explicitly below.
       - name: Set up Node.js for npm
+        if: steps.release.outputs.released == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -110,9 +124,11 @@ jobs:
           scope: "@exadev"
 
       - name: Upgrade npm for OIDC trusted publishing
+        if: steps.release.outputs.released == 'true'
         run: npm install -g npm@latest
 
       - name: Publish to npm
+        if: steps.release.outputs.released == 'true'
         env:
           # Blanked rather than omitted. setup-node exports a dummy NODE_AUTH_TOKEN when none is supplied, and an NPM_TOKEN inherited from a workflow-level env block would be picked up too; either would authenticate this publish as a token publish instead of failing loudly if the trusted publisher is ever missing or misconfigured.
           NODE_AUTH_TOKEN: ""
