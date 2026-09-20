@@ -72,6 +72,7 @@ jobs:
       issues: write
       pull-requests: write
       packages: write
+      id-token: write # OIDC identity for npm trusted publishing, so the npmjs.com publish needs no NPM_TOKEN
     steps:
       - uses: actions/checkout@v4
         with:
@@ -100,15 +101,20 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
 
-      # Publish to npmjs.com
+      # Publish to npmjs.com via trusted publishing, which exchanges the job's OIDC identity for a short-lived registry token instead of a long-lived NPM_TOKEN. registry-url and scope are still set, unlike in this org's single-registry repos that omit them: the GitHub Packages step above already mapped @exadev to npm.pkg.github.com in the same .npmrc, so without remapping it here `npm publish` would push to GitHub Packages a second time rather than to npmjs.com. The _authToken line setup-node writes alongside it is harmless, because npm runs the OIDC exchange before it reads any credential and writes the exchanged token over that same user-level config key. Node 22 rather than 20: trusted publishing requires npm 11.5.1 or later on Node 22.14.0 or higher, and Node 22 still ships npm 10.x, so the CLI is upgraded explicitly below.
       - name: Set up Node.js for npm
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           registry-url: "https://registry.npmjs.org"
           scope: "@exadev"
 
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
+
       - name: Publish to npm
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Blanked rather than omitted. setup-node exports a dummy NODE_AUTH_TOKEN when none is supplied, and an NPM_TOKEN inherited from a workflow-level env block would be picked up too; either would authenticate this publish as a token publish instead of failing loudly if the trusted publisher is ever missing or misconfigured.
+          NODE_AUTH_TOKEN: ""
+          NPM_TOKEN: ""
         run: npm publish
